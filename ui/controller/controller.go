@@ -308,7 +308,7 @@ func (c *Controller) ShowAboutDialog() {
 	pop.Show()
 }
 
-func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), themeFiles map[string]string) {
+func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), accentColorUpdateCallbk func(), onCloseCallbk func(), themeFiles map[string]string) {
 	devs, err := c.App.LocalPlayer.ListAudioDevices()
 	if err != nil {
 		log.Printf("error listing audio devices: %v", err)
@@ -344,6 +344,10 @@ func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), themeFiles map
 		c.App.LocalPlayer.SetAudioDevice(c.App.Config.LocalPlayback.AudioDeviceName)
 	}
 	dlg.OnThemeSettingChanged = themeUpdateCallbk
+	dlg.OnAccentColorChanged = accentColorUpdateCallbk
+	dlg.OnExtractFromCover = func() {
+		c.extractAndTransitionAccentFromCover()
+	}
 	dlg.OnEqualizerSettingsChanged = func() {
 		// Create the appropriate equalizer type based on config
 		var eq mpv.Equalizer
@@ -380,6 +384,10 @@ func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), themeFiles map
 		pop.Hide()
 		fynetooltip.DestroyPopUpToolTipLayer(pop)
 		c.doModalClosed()
+		// Finalize theme changes (SetTheme for accent color changes)
+		if onCloseCallbk != nil {
+			onCloseCallbk()
+		}
 		c.App.SaveConfigFile()
 	}
 	c.ClosePopUpOnEscape(pop)
@@ -654,4 +662,50 @@ func (c *Controller) GetSongRadioTracks(sourceTrack *mediaprovider.Track) ([]*me
 	tracks := []*mediaprovider.Track{sourceTrack}
 	tracks = append(tracks, filteredTracks...)
 	return tracks, nil
+}
+
+// extractAndTransitionAccentFromCover extracts a vibrant color from the current track's
+// cover art and applies it as the theme accent color.
+func (c *Controller) extractAndTransitionAccentFromCover() {
+	if c.App.Config.Theme.ThemeFile != "dynamic" {
+		return
+	}
+
+	// Get current playing item
+	nowPlaying := c.App.PlaybackManager.NowPlaying()
+	if nowPlaying == nil {
+		return
+	}
+
+	// Get cover ID from the track
+	coverID := nowPlaying.Metadata().CoverArtID
+	if coverID == "" {
+		return
+	}
+
+	// Get cover image (blocking call in goroutine)
+	coverImg, err := c.App.ImageManager.GetCoverThumbnail(coverID)
+	if err != nil || coverImg == nil {
+		return
+	}
+
+	// Get base mode for grayscale handling
+	baseMode := "dark" // default fallback
+	if theme, ok := fyne.CurrentApp().Settings().Theme().(*myTheme.MyTheme); ok {
+		baseMode = theme.GetConfig().BaseMode
+	}
+
+	// Extract dominant color
+	extractor := myTheme.NewColorExtractor()
+	extractedHex, err := extractor.ExtractAccentFromImage(coverImg, baseMode)
+	if err != nil {
+		return
+	}
+
+	// Normalize extracted color for current theme mode to ensure visibility
+	if theme, ok := fyne.CurrentApp().Settings().Theme().(*myTheme.MyTheme); ok {
+		normalizer := myTheme.NewColorNormalizer()
+		accentHex := normalizer.NormalizeForMode(extractedHex, baseMode)
+		theme.SetAccentColor(accentHex)
+	}
 }

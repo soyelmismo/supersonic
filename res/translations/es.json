@@ -62,6 +62,8 @@
     "Compilation": "Compilación",
     "Compilations": "Compilaciónes",
     "Composer": "Compositor",
+    "Contrast": "Contraste",
+    "Accent Color": "Color de acento",
     "Composers": "Composers",
     "Configure your music server to add radio stations": "Configura tu servidor de música para agregar estaciones de radio",
     "Confirm Delete Playlist": "Confirmar eliminación de la lista de reproducción",
@@ -120,6 +122,7 @@
     "Error loading AutoEQ profiles": "Error loading AutoEQ profiles",
     "Error updating playlist": "Error updating playlist",
     "Exclusive mode": "Modo exclusivo",
+    "Extract from playing track": "Extraer de pista en reproducción",
     "Fade out on pause": "Fade out on pause",
     "Failed to load profile": "Failed to load profile",
     "Fav.": "Fav.",
@@ -203,6 +206,7 @@
     "Playback": "Reproducción",
     "Playing": "Reproduciendo",
     "Playlist": "Lista de reproducción",
+    "Saturation": "Saturación",
     "Playlists": "Listas de reproducción",
     "Plays": "Reproducciones",
     "Please select a preset to delete": "Please select a preset to delete",
@@ -343,6 +347,14 @@
     "playlist.addedtracks": {
         "one": "Se ha añadido una pista a la lista de reproducción",
         "other": "Se han añadido {{.trackCount}} pistas a la lista de reproducción"
+    },
+    "{{.albumsCount}} albums": {
+        "one": "{{.albumsCount}} álbum",
+        "other": "{{.albumsCount}} álbumes"
+    },
+    "{{.trackCount}} tracks": {
+        "one": "{{.trackCount}} pista",
+        "other": "{{.trackCount}} pistas"
     },
     "reissued": "emitido nuevamente",
     "sec": "seg",
