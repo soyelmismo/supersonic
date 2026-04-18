@@ -345,8 +345,11 @@ func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), accentColorUpd
 	}
 	dlg.OnThemeSettingChanged = themeUpdateCallbk
 	dlg.OnAccentColorChanged = accentColorUpdateCallbk
-	dlg.OnExtractFromCover = func() {
-		c.extractAndTransitionAccentFromCover()
+	dlg.OnExtractFromCover = func() string {
+		if hex, ok := c.extractAndTransitionAccentFromCover(); ok {
+			return hex
+		}
+		return ""
 	}
 	dlg.OnEqualizerSettingsChanged = func() {
 		// Create the appropriate equalizer type based on config
@@ -666,46 +669,51 @@ func (c *Controller) GetSongRadioTracks(sourceTrack *mediaprovider.Track) ([]*me
 
 // extractAndTransitionAccentFromCover extracts a vibrant color from the current track's
 // cover art and applies it as the theme accent color.
-func (c *Controller) extractAndTransitionAccentFromCover() {
+// Returns the extracted hex color and true if successful, empty string and false otherwise.
+func (c *Controller) extractAndTransitionAccentFromCover() (string, bool) {
 	if c.App.Config.Theme.ThemeFile != "dynamic" {
-		return
+		return "", false
 	}
 
 	// Get current playing item
 	nowPlaying := c.App.PlaybackManager.NowPlaying()
 	if nowPlaying == nil {
-		return
+		return "", false
 	}
 
 	// Get cover ID from the track
 	coverID := nowPlaying.Metadata().CoverArtID
 	if coverID == "" {
-		return
+		return "", false
 	}
 
 	// Get cover image (blocking call in goroutine)
 	coverImg, err := c.App.ImageManager.GetCoverThumbnail(coverID)
 	if err != nil || coverImg == nil {
-		return
+		return "", false
 	}
 
-	// Get base mode for grayscale handling
-	baseMode := "dark" // default fallback
+	// Get appearance for grayscale handling
+	appearance := string(myTheme.AppearanceDark) // default fallback
 	if theme, ok := fyne.CurrentApp().Settings().Theme().(*myTheme.MyTheme); ok {
-		baseMode = theme.GetConfig().BaseMode
+		appearance = theme.GetConfig().Appearance
 	}
 
 	// Extract dominant color
 	extractor := myTheme.NewColorExtractor()
-	extractedHex, err := extractor.ExtractAccentFromImage(coverImg, baseMode)
+	extractedHex, err := extractor.ExtractAccentFromImage(coverImg, appearance)
 	if err != nil {
-		return
+		return "", false
 	}
 
 	// Normalize extracted color for current theme mode to ensure visibility
 	if theme, ok := fyne.CurrentApp().Settings().Theme().(*myTheme.MyTheme); ok {
 		normalizer := myTheme.NewColorNormalizer()
-		accentHex := normalizer.NormalizeForMode(extractedHex, baseMode)
+		accentHex := normalizer.NormalizeForMode(extractedHex, appearance)
 		theme.SetAccentColor(accentHex)
+		// Update config with the new accent color
+		c.App.Config.Theme.AccentColor = accentHex
+		return accentHex, true
 	}
+	return "", false
 }

@@ -40,8 +40,8 @@ type SettingsDialog struct {
 	OnPauseFadeSettingsChanged     func()
 	OnAudioDeviceSettingChanged    func()
 	OnThemeSettingChanged          func()
-	OnAccentColorChanged           func() // Lightweight callback for instant accent updates
-	OnExtractFromCover             func() // Extract accent color from current track cover art
+	OnAccentColorChanged           func()        // Lightweight callback for instant accent updates
+	OnExtractFromCover             func() string // Extract accent color from current track cover art, returns hex color or empty string
 	OnDismiss                      func()
 	OnEqualizerSettingsChanged     func()
 	OnPageNeedsRefresh             func()
@@ -705,28 +705,8 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 		themeModeSelect.SetSelectedIndex(0)
 	}
 
-	// Helper to update baseMode from appearance when in dynamic mode
-	updateBaseMode := func(appearance string) {
-		switch appearance {
-		case string(myTheme.AppearanceDark):
-			s.config.Theme.BaseMode = "black"
-		case string(myTheme.AppearanceLight):
-			s.config.Theme.BaseMode = "light"
-		case string(myTheme.AppearanceAuto):
-			if myTheme.IsDarkMode(fyne.CurrentApp()) {
-				s.config.Theme.BaseMode = "black"
-			} else {
-				s.config.Theme.BaseMode = "light"
-			}
-		}
-	}
-
 	themeFileSelect.OnChanged = func(_ string) {
 		s.config.Theme.ThemeFile = themeFileNames[themeFileSelect.SelectedIndex()]
-		// Update base mode if switching to dynamic
-		if s.config.Theme.ThemeFile == myTheme.ThemeFileDynamic {
-			updateBaseMode(themeModeSelect.Selected)
-		}
 		if s.OnThemeSettingChanged != nil {
 			s.OnThemeSettingChanged()
 		}
@@ -734,24 +714,15 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 
 	themeModeSelect.OnChanged = func(value string) {
 		s.config.Theme.Appearance = value
-		// If in dynamic mode, also update baseMode
-		if s.config.Theme.ThemeFile == myTheme.ThemeFileDynamic {
-			updateBaseMode(value)
-		}
 		if s.OnThemeSettingChanged != nil {
 			s.OnThemeSettingChanged()
 		}
 	}
 
-	// Set initial base mode if dynamic is selected
-	if s.config.Theme.ThemeFile == myTheme.ThemeFileDynamic {
-		updateBaseMode(s.config.Theme.Appearance)
-	}
-
 	// Ensure we have valid values (defaults should be set in config loading, but ensure here)
 	// Also update the config with defaults so they get saved
 	if s.config.Theme.AccentColor == "" {
-		s.config.Theme.AccentColor = "#FF8A45" // Default orange accent
+		s.config.Theme.AccentColor = "#286ef4" // Classic Supersonic blue
 	}
 
 	// Hue slider (0-360) for rainbow color selection
@@ -790,7 +761,7 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 			s.config.Theme.AccentColor,
 			s.config.Theme.Saturation,
 			s.config.Theme.Contrast,
-			s.config.Theme.BaseMode,
+			s.config.Theme.Appearance,
 		)
 		if err != nil {
 			// Fallback to accent color
@@ -874,8 +845,8 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 		return val
 	}
 
-	// Create sliders with initial ranges based on current base mode
-	initRanges := getRanges(s.config.Theme.BaseMode)
+	// Create sliders with initial ranges based on current appearance
+	initRanges := getRanges(s.config.Theme.Appearance)
 
 	saturationSlider := widget.NewSlider(initRanges.SatMin, initRanges.SatMax)
 	saturationSlider.Step = 0.05
@@ -926,10 +897,6 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 	// Update controls when theme changes
 	themeFileSelect.OnChanged = func(name string) {
 		s.config.Theme.ThemeFile = themeFileNames[themeFileSelect.SelectedIndex()]
-		// Update base mode if switching to dynamic
-		if s.config.Theme.ThemeFile == myTheme.ThemeFileDynamic {
-			updateBaseMode(themeModeSelect.Selected)
-		}
 		updateAccentControls()
 		if s.OnThemeSettingChanged != nil {
 			s.OnThemeSettingChanged()
@@ -1055,7 +1022,14 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 				util.NewHSpace(10),
 				widget.NewButton(lang.L("Extract from playing track"), func() {
 					if s.OnExtractFromCover != nil {
-						s.OnExtractFromCover()
+						if extractedHex := s.OnExtractFromCover(); extractedHex != "" {
+							// Update config with extracted color
+							s.config.Theme.AccentColor = extractedHex
+							// Update slider to match new color
+							hueSlider.SetValue(hexToHue(extractedHex))
+							// Update palette preview
+							updatePalettePreview()
+						}
 					}
 				}),
 			),

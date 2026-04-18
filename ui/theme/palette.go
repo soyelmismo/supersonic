@@ -6,6 +6,8 @@ import (
 	"image/color"
 	"math"
 	"strings"
+
+	"fyne.io/fyne/v2"
 )
 
 // SliderRanges defines the min/max ranges for saturation and contrast sliders per base mode
@@ -14,16 +16,16 @@ type SliderRanges struct {
 	ContrastMin, ContrastMax float64
 }
 
-// GetSliderRanges returns the clamp ranges for saturation and contrast based on base mode
+// GetSliderRanges returns the clamp ranges for saturation and contrast based on appearance
 // This is the single source of truth used by both UI sliders and palette generation
-func GetSliderRanges(baseMode string) SliderRanges {
-	switch strings.ToLower(baseMode) {
-	case "light":
-		return SliderRanges{SatMin: 0.5, SatMax: 1.0, ContrastMin: 0.5, ContrastMax: 1.0}
-	case "black":
-		return SliderRanges{SatMin: 0.5, SatMax: 1.0, ContrastMin: 0, ContrastMax: 1.0}
-	default:
-		return SliderRanges{SatMin: 0.0, SatMax: 1.0, ContrastMin: 0.0, ContrastMax: 1.0}
+func GetSliderRanges(appearance string) SliderRanges {
+	switch appearance {
+	case string(AppearanceLight):
+		return SliderRanges{SatMin: 0.5, SatMax: 1.5, ContrastMin: 0.5, ContrastMax: 1.0}
+	case string(AppearanceDark):
+		return SliderRanges{SatMin: 0.5, SatMax: 1.5, ContrastMin: 0, ContrastMax: 1.0}
+	default: // Auto - use dark ranges as default
+		return SliderRanges{SatMin: 0.5, SatMax: 1.5, ContrastMin: 0, ContrastMax: 1.0}
 	}
 }
 
@@ -46,18 +48,19 @@ type Palette struct {
 }
 
 // GeneratePalette creates a unified color palette from the given configuration
-// Uses consistent formulas across all base modes for coherence.
+// Uses consistent formulas across all appearances for coherence.
 // Note: Caching is handled by MyTheme.cachedPalette, not here, to avoid double caching.
-func GeneratePalette(accentHex string, saturation, contrast float64, baseMode string) (*Palette, error) {
+func GeneratePalette(accentHex string, saturation, contrast float64, appearance string) (*Palette, error) {
 	// Normalize accent color for the mode (ensures visibility)
 	normalizer := NewColorNormalizer()
-	normalizedHex := normalizer.NormalizeForMode(accentHex, baseMode)
+	normalizedHex := normalizer.NormalizeForMode(accentHex, appearance)
 	accent, _ := hexToColor(normalizedHex)
 	accentH, accentS, accentL := RgbToHslColor(accent)
 
 	// Apply saturation/contrast sliders to accent
 	if saturation != 1.0 {
-		accentS = clampFloat(accentS*saturation, 0, 1)
+		// Allow oversaturation (>1.0) for more vibrant colors
+		accentS = math.Max(0, accentS*saturation)
 	}
 	if contrast != 1.0 {
 		// Contrast affects lightness: >1 = more extreme, <1 = closer to mid
@@ -65,11 +68,20 @@ func GeneratePalette(accentHex string, saturation, contrast float64, baseMode st
 		accentL = midpoint + (accentL-midpoint)*contrast
 		accentL = clampFloat(accentL, 0.15, 0.85)
 	}
-	accent = HslToRgb(accentH, accentS, accentL)
-
 	// Determine mode characteristics
-	isLight := strings.ToLower(baseMode) == "light"
-	isBlack := strings.ToLower(baseMode) == "black"
+	isLight := appearance == string(AppearanceLight)
+	isDark := appearance == string(AppearanceDark) || (appearance == string(AppearanceAuto) && IsDarkMode(fyne.CurrentApp()))
+
+	// Apply luminosity correction for legibility only when contrast is low/medium
+	// When contrast > 1.0, user wants extreme colors, so respect their choice
+	if contrast <= 1.0 {
+		if isLight {
+			accentL = math.Min(accentL, 0.45)
+		} else {
+			accentL = math.Max(accentL, 0.55)
+		}
+	}
+	accent = HslToRgb(accentH, math.Min(accentS, 1.0), accentL)
 
 	// Unified palette generation using consistent ratios
 	// All values derived from accent hue with mode-specific lightness
@@ -86,8 +98,8 @@ func GeneratePalette(accentHex string, saturation, contrast float64, baseMode st
 		textPrimaryL = 0.08   // Darker for better contrast (was 0.12)
 		textSecondaryL = 0.28 // Darker gray (was 0.40)
 		bgSat = 0.03
-	} else if isBlack {
-		// Black/AMOLED mode: pure black to dark grey
+	} else if isDark {
+		// Dark mode (includes both Dark and Auto when system is dark)
 		bgL = 0.02
 		surfL = 0.10
 		pageBgL = 0.04
@@ -97,7 +109,8 @@ func GeneratePalette(accentHex string, saturation, contrast float64, baseMode st
 		textSecondaryL = 0.65
 		bgSat = 0.04
 	} else {
-		// Dark mode (default): dark greys
+		// Fallback - shouldn't happen with proper Appearance values
+		// Use dark greys as safe default
 		bgL = 0.10
 		surfL = 0.16
 		pageBgL = 0.08
@@ -157,20 +170,8 @@ func GeneratePalette(accentHex string, saturation, contrast float64, baseMode st
 	success := HslToRgb(140.0, 0.60, 0.45) // Green
 	danger := HslToRgb(0.0, 0.70, 0.50)    // Red
 
-	// Ensure hyperlinks are highly legible against both surfaces and backgrounds
+	// Hyperlink: use the processed accent directly (luminosity correction already applied)
 	hyperlink := accent
-	if isLight {
-		// In light mode, ensure it's dark enough to pop
-		_, accentS, accentL := RgbToHslColor(accent)
-		hyperlink = HslToRgb(accentH, accentS, math.Min(accentL, 0.35))
-	} else {
-		// In dark mode, ensure it's bright enough to pop
-		_, accentS, accentL := RgbToHslColor(accent)
-		hyperlink = HslToRgb(accentH, accentS, math.Max(accentL, 0.65))
-	}
-	// Final safety check against actual background colors to guarantee WCAG AA
-	hyperlink, _ = EnsureContrast(hyperlink, surf, 4.5)
-	hyperlink, _ = EnsureContrast(hyperlink, bg, 4.5)
 
 	palette := &Palette{
 		Accent:         accent,
