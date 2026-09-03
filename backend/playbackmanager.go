@@ -58,15 +58,16 @@ type PlaybackManager struct {
 	// URL cache to avoid duplicate requests between playback and waveform generation
 	urlCache     map[string]urlCacheEntry
 	urlCacheLock sync.RWMutex
+
+	// current radio metadata
+	radioStationName string
+	radioIcyTitle    string
+	radioIcyArtist   string
 }
 
 type urlCacheEntry struct {
 	url      string
 	cachedAt time.Time
-	// current radio metadata
-	radioStationName string
-	radioIcyTitle    string
-	radioIcyArtist   string
 }
 
 type RemotePlaybackDevice struct {
