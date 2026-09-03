@@ -15,14 +15,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dweymouth/supersonic/backend/ipc"
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/backend/player"
-	"github.com/dweymouth/supersonic/backend/player/mpv"
-	"github.com/dweymouth/supersonic/backend/util"
-	"github.com/dweymouth/supersonic/backend/windows"
-	"github.com/dweymouth/supersonic/sharedutil"
 	"github.com/google/uuid"
+	"github.com/supersonic-app/supersonic/backend/ipc"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/player"
+	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/backend/util"
+	"github.com/supersonic-app/supersonic/backend/windows"
+	"github.com/supersonic-app/supersonic/sharedutil"
 
 	"github.com/20after4/configdir"
 	"github.com/zalando/go-keyring"
@@ -160,6 +160,13 @@ func StartupApp(appName, displayAppName, appVersion, appVersionTag, latestReleas
 		a.AudioCache = ac
 	}
 	a.PlaybackManager = NewPlaybackManager(a.bgrndCtx, a.ServerManager, a.AudioCache, a.LocalPlayer, &a.Config.Playback, &a.Config.Scrobbling, &a.Config.Transcoding, &a.Config.Application)
+	a.PlaybackManager.CoverArtPathFn = func(coverArtID string) (string, error) {
+		// Ensure the thumbnail is cached on disk, then return its path so
+		// the DLNA player can expose it through the local proxy as
+		// upnp:albumArtURI.
+		a.ImageManager.GetCoverThumbnail(coverArtID)
+		return a.ImageManager.GetCoverArtPath(coverArtID)
+	}
 	a.Config.Application.MaxImageCacheSizeMB = clamp(a.Config.Application.MaxImageCacheSizeMB, 1, 500)
 	a.ImageManager.SetMaxOnDiskCacheSizeBytes(int64(a.Config.Application.MaxImageCacheSizeMB) * 1_048_576)
 	var fetch *LrcLibFetcher
@@ -714,6 +721,12 @@ func (a *App) checkFlagsAndSendIPCMsg(cli *ipc.Client) error {
 		return cli.Show()
 	case *FlagReloadTheme:
 		return cli.ReloadTheme()
+	case *FlagCurrentTrack:
+		data, err := cli.CurrentTrack()
+		if err == nil {
+			fmt.Println(data)
+		}
+		return err
 	case VolumeCLIArg >= 0:
 		return cli.SetVolume(VolumeCLIArg)
 	case VolumePctCLIArg != 0:

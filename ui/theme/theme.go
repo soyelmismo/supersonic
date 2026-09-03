@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dweymouth/supersonic/backend"
-	"github.com/dweymouth/supersonic/res"
+	"github.com/supersonic-app/supersonic/backend"
+	"github.com/supersonic-app/supersonic/res"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -261,6 +261,16 @@ func (m *MyTheme) getColorFromPalette(name fyne.ThemeColorName, palette *Palette
 	default:
 		return palette.TextPrimary
 	}
+}
+
+func (m *MyTheme) AppearanceMode() AppearanceMode {
+	v := DefaultAppearance // default if config has invalid or missing setting
+	if slices.Contains(
+		[]string{string(AppearanceLight), string(AppearanceDark), string(AppearanceAuto)},
+		m.config.Appearance) {
+		v = AppearanceMode(m.config.Appearance)
+	}
+	return v
 }
 
 func (m *MyTheme) Color(name fyne.ThemeColorName, defVariant fyne.ThemeVariant) color.Color {

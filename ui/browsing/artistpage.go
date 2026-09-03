@@ -7,13 +7,13 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/dweymouth/supersonic/backend"
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/sharedutil"
-	"github.com/dweymouth/supersonic/ui/controller"
-	myTheme "github.com/dweymouth/supersonic/ui/theme"
-	"github.com/dweymouth/supersonic/ui/util"
-	"github.com/dweymouth/supersonic/ui/widgets"
+	"github.com/supersonic-app/supersonic/backend"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/sharedutil"
+	"github.com/supersonic-app/supersonic/ui/controller"
+	myTheme "github.com/supersonic-app/supersonic/ui/theme"
+	"github.com/supersonic-app/supersonic/ui/util"
+	"github.com/supersonic-app/supersonic/ui/widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -677,7 +677,8 @@ type ArtistPageHeader struct {
 	artistImage           *widgets.ImagePlaceholder
 	artistImageID         string
 	titleDisp             *widget.RichText
-	biographyDisp         *widgets.MaxRowsLabel
+	biographyDisp         *widget.Label
+	biographyScroll       *container.Scroll
 	similarArtists        *fyne.Container
 	favoriteBtn           *widgets.FavoriteButton
 	playBtn               *widget.Button
@@ -695,11 +696,17 @@ type ArtistPageHeader struct {
 func NewArtistPageHeader(page *ArtistPage) *ArtistPageHeader {
 	// due to widget reuse a.artistPage can change so page MUST NOT
 	// be directly captured in a closure throughout this function!
+	biographyText := widget.NewLabel(lang.L(artistBioNotAvailableKey))
+
+	scroll := container.NewScroll(biographyText)
+	scroll.SetMinSize(fyne.NewSize(0, 100))
+
 	a := &ArtistPageHeader{
-		artistPage:     page,
-		titleDisp:      widget.NewRichTextWithText(""),
-		biographyDisp:  widgets.NewMaxRowsLabel(5, lang.L(artistBioNotAvailableKey)),
-		similarArtists: container.NewHBox(),
+		artistPage:      page,
+		titleDisp:       widget.NewRichTextWithText(""),
+		biographyDisp:   biographyText,
+		biographyScroll: scroll,
+		similarArtists:  container.NewHBox(),
 	}
 	a.titleDisp.Segments[0].(*widget.TextSegment).Style = widget.RichTextStyle{
 		SizeName: theme.SizeNameHeadingText,
@@ -748,7 +755,6 @@ func NewArtistPageHeader(page *ArtistPage) *ArtistPageHeader {
 	// shareMenuItem.Disabled = !canShareArtists
 
 	a.biographyDisp.Wrapping = fyne.TextWrapWord
-	a.biographyDisp.Truncation = fyne.TextTruncateEllipsis
 	a.collapseBtn = widgets.NewHeaderCollapseButton(func() {
 		a.Compact = !a.Compact
 		a.artistPage.cfg.CompactHeader = a.Compact
@@ -880,8 +886,10 @@ func (a *ArtistPageHeader) Refresh() {
 	a.similarArtists.Hidden = a.Compact
 	a.collapseBtn.Collapsed = a.Compact
 	if a.Compact {
+		a.biographyScroll.Hide()
 		a.artistImage.SetMinSize(fyne.NewSquareSize(myTheme.CompactHeaderImageSize))
 	} else {
+		a.biographyScroll.Show()
 		a.artistImage.SetMinSize(fyne.NewSquareSize(myTheme.HeaderImageSize))
 	}
 	a.BaseWidget.Refresh()
@@ -938,7 +946,7 @@ func (a *ArtistPageHeader) CreateRenderer() fyne.WidgetRenderer {
 			container.NewBorder(nil, nil, a.artistImage, nil,
 				container.NewVBox(
 					container.New(layout.NewCustomPaddedVBoxLayout(theme.Padding()-10),
-						a.titleDisp, a.biographyDisp, a.similarArtists),
+						a.titleDisp, a.biographyScroll, util.NewVSpace(10), a.similarArtists),
 					btnContainer),
 			),
 			container.NewVBox(container.NewHBox(layout.NewSpacer(), a.collapseBtn)),

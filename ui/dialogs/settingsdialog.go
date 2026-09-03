@@ -13,12 +13,12 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/dweymouth/supersonic/backend"
-	"github.com/dweymouth/supersonic/backend/player/mpv"
-	"github.com/dweymouth/supersonic/res"
-	myTheme "github.com/dweymouth/supersonic/ui/theme"
-	"github.com/dweymouth/supersonic/ui/util"
-	"github.com/dweymouth/supersonic/ui/widgets"
+	"github.com/supersonic-app/supersonic/backend"
+	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/res"
+	myTheme "github.com/supersonic-app/supersonic/ui/theme"
+	"github.com/supersonic-app/supersonic/ui/util"
+	"github.com/supersonic-app/supersonic/ui/widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -618,7 +618,7 @@ func (s *SettingsDialog) openAutoEQBrowser(geq *GraphicEqualizer, debouncer func
 
 	// Show in a modal popup dialog
 	var popup *widget.PopUp
-	popup = widget.NewModalPopUp(browser.SearchDialog, s.window.Canvas())
+	popup = widget.NewModalPopUp(container.NewPadded(browser.SearchDialog), s.window.Canvas())
 
 	browser.SetOnProfileSelected(func(profile *backend.AutoEQProfile) {
 		s.applyAutoEQProfile(profile, geq, debouncer)
@@ -931,16 +931,22 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 		s.doChooseTTFFile(window, boldFontEntry)
 	})
 
-	uiScaleRadio := widget.NewRadioGroup([]string{lang.L("Smaller"), lang.L("Normal"), lang.L("Larger")}, func(choice string) {
-		s.config.Application.UIScaleSize = choice
-		s.setRestartRequired()
+	uiScaleLabels := []string{lang.L("Smaller"), lang.L("Normal"), lang.L("Larger")}
+	uiScaleValues := []string{"Smaller", "Normal", "Larger"}
+
+	uiScaleRadio := widget.NewRadioGroup(uiScaleLabels, func(choice string) {
+		if i := slices.Index(uiScaleLabels, choice); i >= 0 {
+			s.config.Application.UIScaleSize = uiScaleValues[i]
+			s.setRestartRequired()
+		}
 	})
 	uiScaleRadio.Required = true
 	uiScaleRadio.Horizontal = true
-	if s.config.Application.UIScaleSize == "Smaller" || s.config.Application.UIScaleSize == "Larger" {
-		uiScaleRadio.Selected = s.config.Application.UIScaleSize
+
+	if i := slices.Index(uiScaleValues, s.config.Application.UIScaleSize); i >= 0 {
+		uiScaleRadio.Selected = uiScaleLabels[i]
 	} else {
-		uiScaleRadio.Selected = "Normal"
+		uiScaleRadio.Selected = lang.L("Normal")
 	}
 
 	disableDPI := widget.NewCheck(lang.L("Disable automatic DPI adjustment"), func(b bool) {

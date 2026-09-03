@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/backend/player"
-	"github.com/dweymouth/supersonic/backend/player/mpv"
-	"github.com/dweymouth/supersonic/backend/util"
-	"github.com/dweymouth/supersonic/sharedutil"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/player"
+	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/backend/util"
+	"github.com/supersonic-app/supersonic/sharedutil"
 )
 
 // TODO: make thread-safe
@@ -112,16 +112,24 @@ type playbackEngine struct {
 
 	// registered callbacks
 	onBeforeSongChange []func(next mediaprovider.MediaItem)
-	onSongChange       []func(nowPlaying mediaprovider.MediaItem, justScrobbledIfAny *mediaprovider.Track)
-	onPlayTimeUpdate   []func(float64, float64, bool)
-	onLoopModeChange   []func(LoopMode)
-	onShuffleChange    []func(bool)
-	onVolumeChange     []func(int)
-	onSeek             []func()
-	onPaused           []func()
-	onStopped          []func()
-	onPlaying          []func()
-	onQueueChange      []func()
+	// fired exactly once, from loadTrackPaused, for the track that is being
+	// loaded paused (e.g. restoring playback state on app startup). Unlike
+	// onBeforeSongChange, this is never fired again for next-up/precache
+	// purposes, so consumers can safely use it to know "this is the track
+	// that was paused-loaded at startup" without it being retriggered by
+	// later, unrelated onBeforeSongChange calls (e.g. from handleNextTrackUpdated)
+	// while pendingLoadPaused is still true.
+	onLoadTrackPaused []func(item mediaprovider.MediaItem)
+	onSongChange      []func(nowPlaying mediaprovider.MediaItem, justScrobbledIfAny *mediaprovider.Track)
+	onPlayTimeUpdate  []func(float64, float64, bool)
+	onLoopModeChange  []func(LoopMode)
+	onShuffleChange   []func(bool)
+	onVolumeChange    []func(int)
+	onSeek            []func()
+	onPaused          []func()
+	onStopped         []func()
+	onPlaying         []func()
+	onQueueChange     []func()
 
 	onRadioMetadataChange []func(radioName, title, artist string)
 
@@ -173,17 +181,24 @@ func (p *playbackEngine) registerPlayerCallbacks(pl player.BasePlayer) {
 	pl.OnSeek(func() {
 		p.handleTimePosUpdate(true)
 		p.invokeNoArgCallbacks(p.onSeek)
+		seekState := "playing"
+		if p.PlaybackStatus().State == player.Paused {
+			seekState = "paused"
+		}
+		p.reportPlayback(seekState)
 	})
 	pl.OnStopped(p.handleOnStopped)
 	pl.OnPaused(func() {
 		p.playTimeStopwatch.Stop()
 		p.stopPollTimePos()
 		p.invokeNoArgCallbacks(p.onPaused)
+		p.reportPlayback("paused")
 	})
 	pl.OnPlaying(func() {
 		p.playTimeStopwatch.Start()
 		p.startPollTimePos()
 		p.invokeNoArgCallbacks(p.onPlaying)
+		p.reportPlayback("playing")
 	})
 }
 
@@ -333,6 +348,9 @@ func (p *playbackEngine) loadTrackPaused(idx int, startTime float64) error {
 	// Pre-generate the waveform image for the paused track using the same hook
 	// that normally pre-generates waveforms for the upcoming track.
 	for _, cb := range p.onBeforeSongChange {
+		cb(nowPlaying)
+	}
+	for _, cb := range p.onLoadTrackPaused {
 		cb(nowPlaying)
 	}
 
@@ -863,7 +881,7 @@ func (p *playbackEngine) cacheNextTracks() {
 		// the "currently" playing track, since we're probably about to play it
 		npI := max(p.nowPlayingIdx, 0)
 		for _, idx := range [3]int{npI, npI + 1, npI + 2} {
-			if idx > 0 && idx < p.getPlayQueueLength() {
+			if idx >= 0 && idx < p.getPlayQueueLength() {
 				item := p.getPlayQueueItemAt(idx)
 				if item.Metadata().Type == mediaprovider.MediaItemTypeTrack {
 					fetch = append(fetch, AudioCacheRequest{
@@ -934,6 +952,7 @@ func (p *playbackEngine) handleOnStopped() {
 	p.handleTimePosUpdate(false)
 	p.invokeOnSongChangeCallbacks()
 	p.invokeNoArgCallbacks(p.onStopped)
+	p.reportPlayback("stopped")
 	p.alreadyScrobbled = false
 	p.wasStopped = true
 	p.nowPlayingIdx = -1
@@ -1114,6 +1133,7 @@ func (p *playbackEngine) sendNowPlayingScrobble() {
 		track.PlayCount += 1
 	}
 	go p.sm.Server.TrackBeganPlayback(track.ID)
+	p.reportPlayback("starting")
 }
 
 // creates a deep copy of the track info so that we can maintain our own state
@@ -1134,6 +1154,22 @@ func (p *playbackEngine) invokeOnSongChangeCallbacks() {
 		cb(p.NowPlaying(), p.lastScrobbled)
 	}
 	p.lastScrobbled = nil
+}
+
+func (p *playbackEngine) reportPlayback(state string) {
+	reporter, ok := p.sm.Server.(mediaprovider.CanReportPlayback)
+	if !ok {
+		return
+	}
+	if p.getPlayQueueLength() == 0 || p.nowPlayingIdx < 0 {
+		return
+	}
+	np := p.NowPlaying()
+	if np == nil || np.Metadata().Type != mediaprovider.MediaItemTypeTrack {
+		return
+	}
+	posMs := int64(p.latestTrackPosition * 1000)
+	go reporter.ReportPlayback(np.Metadata().ID, posMs, state)
 }
 
 func (pm *playbackEngine) invokeNoArgCallbacks(cbs []func()) {

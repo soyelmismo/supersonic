@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/charlievieth/strcase"
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/backend/player"
-	"github.com/dweymouth/supersonic/backend/player/dlna"
-	"github.com/dweymouth/supersonic/backend/player/mpv"
-	"github.com/dweymouth/supersonic/sharedutil"
 	"github.com/supersonic-app/go-upnpcast/device"
 	"github.com/supersonic-app/go-upnpcast/services"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/player"
+	"github.com/supersonic-app/supersonic/backend/player/dlna"
+	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/sharedutil"
 )
 
 // A high-level MediaProvider-aware playback engine, serves as an
@@ -31,6 +31,12 @@ type PlaybackManager struct {
 	appCfg       *AppConfig
 	cfg          *PlaybackConfig
 	transcodeCfg *TranscodingConfig
+
+	// CoverArtPathFn returns a local filesystem path to the cached cover
+	// art image for the given CoverArtID. Used by DLNA cast so the
+	// renderer can fetch album art via the local proxy. Set externally
+	// (typically wired to ImageManager.GetCoverArtPath).
+	CoverArtPathFn func(coverArtID string) (string, error)
 
 	localPlayer         player.BasePlayer
 	remotePlayersLock   sync.Mutex
@@ -52,6 +58,11 @@ type PlaybackManager struct {
 	// URL cache to avoid duplicate requests between playback and waveform generation
 	urlCache     map[string]urlCacheEntry
 	urlCacheLock sync.RWMutex
+
+	// current radio metadata
+	radioStationName string
+	radioIcyTitle    string
+	radioIcyArtist   string
 }
 
 type urlCacheEntry struct {
@@ -158,7 +169,7 @@ func (p *PlaybackManager) addWfmImageJob(job *WaveformImageJob) {
 }
 
 func (p *PlaybackManager) addOnTrackChangeHook() {
-	// See https://github.com/dweymouth/supersonic/issues/483
+	// See https://github.com/supersonic-app/supersonic/issues/483
 	// On Windows, MPV sometimes fails to start playback when switching to a track
 	// with a different sample rate than the previous. If this is detected,
 	// send a command to the MPV player to force restart playback.
@@ -182,12 +193,15 @@ func (p *PlaybackManager) addOnTrackChangeHook() {
 				p.addWfmImageJob(p.wfmGen.StartWaveformGeneration(item.(*mediaprovider.Track)))
 			}
 		}
-		if p.isLoadTrackPaused() {
-			// we need to call handleWaveformImageSongChange to ensure the waveform image is updated
-			// for the track that is loaded paused when starting the app
-			p.handleWaveformImageSongChange(item)
-			p.wasLoadTrackPaused = true
+	})
+	p.engine.onLoadTrackPaused = append(p.engine.onLoadTrackPaused, func(item mediaprovider.MediaItem) {
+		if item == nil || !p.engine.playbackCfg.UseWaveformSeekbar {
+			return
 		}
+		// we need to call handleWaveformImageSongChange here to ensure the waveform image is updated
+		// for the track that is loaded paused when starting the app
+		p.handleWaveformImageSongChange(item)
+		p.wasLoadTrackPaused = true
 	})
 
 	p.OnSongChange(func(item mediaprovider.MediaItem, _ *mediaprovider.Track) {
@@ -202,7 +216,7 @@ func (p *PlaybackManager) addOnTrackChangeHook() {
 		if runtime.GOOS != "windows" {
 			return
 		}
-		// workaround for https://github.com/dweymouth/supersonic/issues/483 (see above comment)
+		// workaround for https://github.com/supersonic-app/supersonic/issues/483 (see above comment)
 		if p.NowPlayingIndex() != p.engine.getPlayQueueLength() && p.PlaybackStatus().State == player.Playing {
 			p.lastPlayTime = 0
 			go func() {
@@ -213,6 +227,11 @@ func (p *PlaybackManager) addOnTrackChangeHook() {
 				}
 			}()
 		}
+	})
+	p.OnRadioMetadataChange(func(radioName, title, artist string) {
+		p.radioStationName = radioName
+		p.radioIcyTitle = title
+		p.radioIcyArtist = artist
 	})
 }
 
@@ -294,17 +313,18 @@ func (p *PlaybackManager) ScanRemotePlayers(ctx context.Context, fastScan bool) 
 func (p *PlaybackManager) scanRemotePlayers(ctx context.Context, waitSec int) {
 	devices, _ := device.SearchMediaRenderers(ctx, waitSec, services.AVTransport, services.RenderingControl)
 
+	coverArtPathFn := p.CoverArtPathFn
 	var discovered []RemotePlaybackDevice
 	for _, d := range devices {
-		p := RemotePlaybackDevice{
+		rp := RemotePlaybackDevice{
 			Name:     d.FriendlyName,
 			URL:      d.URL,
 			Protocol: "DLNA",
 			new: func() (player.BasePlayer, error) {
-				return dlna.NewDLNAPlayer(d)
+				return dlna.NewDLNAPlayer(d, coverArtPathFn)
 			},
 		}
-		discovered = append(discovered, p)
+		discovered = append(discovered, rp)
 	}
 
 	p.remotePlayersLock.Lock()
@@ -377,7 +397,15 @@ func (p *PlaybackManager) DisableCallbacks() {
 
 // Gets the now playing media item, if any.
 func (p *PlaybackManager) NowPlaying() mediaprovider.MediaItem {
-	return p.engine.NowPlaying()
+	item := p.engine.NowPlaying()
+	if station, ok := item.(*mediaprovider.RadioStation); ok {
+		station = station.Copy().(*mediaprovider.RadioStation)
+		station.StationName = p.radioStationName
+		station.Title = p.radioIcyTitle
+		station.Artists = []string{p.radioIcyArtist}
+		item = station
+	}
+	return item
 }
 
 func (p *PlaybackManager) NowPlayingIndex() int {
@@ -586,10 +614,6 @@ func (p *PlaybackManager) PlayTrackAt(idx int) {
 // starting MPV. Call Continue (or PlayPause) to begin actual playback.
 func (p *PlaybackManager) LoadTrackPaused(idx int, startTime float64) {
 	p.cmdQueue.LoadTrackPaused(idx, startTime)
-}
-
-func (p *PlaybackManager) isLoadTrackPaused() bool {
-	return p.engine.pendingLoadPaused
 }
 
 func (p *PlaybackManager) PlayRandomSongs(genreName string) error {
@@ -835,6 +859,9 @@ func (p *PlaybackManager) IsPauseAfterCurrent() bool {
 func (p *PlaybackManager) enqueueAutoplayTracks() {
 	nowPlaying := p.NowPlaying()
 	if nowPlaying == nil {
+		return
+	}
+	if nowPlaying.Metadata().Type == mediaprovider.MediaItemTypeRadioStation {
 		return
 	}
 

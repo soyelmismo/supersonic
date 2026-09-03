@@ -6,10 +6,10 @@ import (
 	"sync"
 
 	"github.com/deluan/sanitize"
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/backend/mediaprovider/helpers"
-	"github.com/dweymouth/supersonic/sharedutil"
 	"github.com/supersonic-app/go-subsonic/subsonic"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider/helpers"
+	"github.com/supersonic-app/supersonic/sharedutil"
 )
 
 func (s *subsonicMediaProvider) SearchAll(searchQuery string, maxResults int) ([]*mediaprovider.SearchResult, error) {
@@ -70,7 +70,7 @@ func (s *subsonicMediaProvider) SearchAll(searchQuery string, maxResults int) ([
 		r, e := s.GetRadioStations()
 		if e == nil {
 			radios = sharedutil.FilterSlice(r, func(r *mediaprovider.RadioStation) bool {
-				return helpers.AllTermsMatch(strings.ToLower(sanitize.Accents(r.Name)), queryLowerWords)
+				return helpers.AllTermsMatch(strings.ToLower(sanitize.Accents(r.StationName)), queryLowerWords)
 			})
 		}
 		wg.Done()
@@ -156,7 +156,7 @@ func mergeResults(
 		results = append(results, &mediaprovider.SearchResult{
 			Type: mediaprovider.ContentTypeRadioStation,
 			ID:   r.ID,
-			Name: r.Name,
+			Name: r.StationName,
 			Item: r,
 		})
 	}
