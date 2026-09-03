@@ -108,6 +108,7 @@ else
   cp /usr/lib/x86_64-linux-gnu/libxml2.so.2 Supersonic.AppDir/usr/lib/ # CachyOS fix
   cp /usr/lib/x86_64-linux-gnu/libicuuc.so.70 Supersonic.AppDir/usr/lib/ # CachyOS fix
   cp /usr/lib/x86_64-linux-gnu/libicudata.so.70 Supersonic.AppDir/usr/lib/ # CachyOS fix
+  cp /usr/lib/x86_64-linux-gnu/libnettle.so.8 Supersonic.AppDir/usr/lib/
   set +x
 fi
 
@@ -115,7 +116,7 @@ printf '%s\n' '#!/bin/bash' 'SELF=$(readlink -f "$0")' 'HERE=${SELF%/*}' 'EXEC="
 printf '%s\n' '[Desktop Entry]' 'Name=Supersonic' 'Exec=supersonic' 'Icon=ico' 'Type=Application' 'Comment=A lightweight cross-platform desktop client for self-hosted music servers' 'Categories=AudioVideo;' > Supersonic.AppDir/"supersonic.desktop"
 chmod +x Supersonic.AppDir/AppRun
 chmod +x Supersonic.AppDir/supersonic.desktop
-wget -nv https://raw.githubusercontent.com/dweymouth/supersonic/main/res/appicon.png -O Supersonic.AppDir/ico.png
+wget -nv https://raw.githubusercontent.com/supersonic-app/supersonic/main/res/appicon.png -O Supersonic.AppDir/ico.png
 cp supersonic Supersonic.AppDir/usr/bin/
 chmod +x Supersonic.AppDir/usr/bin/supersonic
 
