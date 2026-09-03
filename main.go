@@ -11,12 +11,14 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/dweymouth/supersonic/backend"
-	"github.com/dweymouth/supersonic/backend/windows"
-	"github.com/dweymouth/supersonic/res"
-	"github.com/dweymouth/supersonic/res/wintaskbarthumbs"
-	"github.com/dweymouth/supersonic/ui"
-	"github.com/dweymouth/supersonic/ui/util"
+	"github.com/supersonic-app/supersonic/backend"
+	"github.com/supersonic-app/supersonic/backend/windows"
+	"github.com/supersonic-app/supersonic/res"
+	"github.com/supersonic-app/supersonic/res/wintaskbarthumbs"
+	"github.com/supersonic-app/supersonic/ui"
+	"github.com/supersonic-app/supersonic/ui/controller"
+	myTheme "github.com/supersonic-app/supersonic/ui/theme"
+	"github.com/supersonic-app/supersonic/ui/util"
 	"golang.org/x/term"
 
 	"fyne.io/fyne/v2"
@@ -53,6 +55,10 @@ func main() {
 			log.Fatalf("fatal startup error: %v", err.Error())
 		}
 		return
+	}
+
+	if runtime.GOOS == "linux" {
+		ui.SetCursorThemeEnvIfMissing()
 	}
 
 	if myApp.Config.Application.UIScaleSize == "Smaller" {
@@ -103,7 +109,7 @@ func main() {
 		}
 	}
 
-	fyneApp := app.New()
+	fyneApp := app.NewWithID(res.AppID)
 	fyneApp.SetIcon(res.ResAppicon256Png)
 
 	mainWindow := ui.NewMainWindow(fyneApp, res.AppName, res.DisplayName, res.AppVersion, myApp)
@@ -133,6 +139,9 @@ func main() {
 		fyneApp.Run()
 	} else {
 		fyneApp.Lifecycle().SetOnStarted(func() {
+			if mode := fyne.CurrentApp().Settings().Theme().(*myTheme.MyTheme).AppearanceMode(); mode != myTheme.AppearanceAuto {
+				controller.SetWindowThemeMode(mainWindow.Window, mode)
+			}
 			defaultServer := myApp.ServerManager.GetDefaultServer()
 			if defaultServer == nil {
 				mainWindow.Controller.PromptForFirstServer()

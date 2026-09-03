@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/backend/player"
-	"github.com/dweymouth/supersonic/backend/player/mpv"
-	"github.com/dweymouth/supersonic/backend/util"
-	"github.com/dweymouth/supersonic/sharedutil"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/player"
+	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/backend/util"
+	"github.com/supersonic-app/supersonic/sharedutil"
 )
 
 // TODO: make thread-safe
@@ -112,16 +112,24 @@ type playbackEngine struct {
 
 	// registered callbacks
 	onBeforeSongChange []func(next mediaprovider.MediaItem)
-	onSongChange       []func(nowPlaying mediaprovider.MediaItem, justScrobbledIfAny *mediaprovider.Track)
-	onPlayTimeUpdate   []func(float64, float64, bool)
-	onLoopModeChange   []func(LoopMode)
-	onShuffleChange    []func(bool)
-	onVolumeChange     []func(int)
-	onSeek             []func()
-	onPaused           []func()
-	onStopped          []func()
-	onPlaying          []func()
-	onQueueChange      []func()
+	// fired exactly once, from loadTrackPaused, for the track that is being
+	// loaded paused (e.g. restoring playback state on app startup). Unlike
+	// onBeforeSongChange, this is never fired again for next-up/precache
+	// purposes, so consumers can safely use it to know "this is the track
+	// that was paused-loaded at startup" without it being retriggered by
+	// later, unrelated onBeforeSongChange calls (e.g. from handleNextTrackUpdated)
+	// while pendingLoadPaused is still true.
+	onLoadTrackPaused []func(item mediaprovider.MediaItem)
+	onSongChange      []func(nowPlaying mediaprovider.MediaItem, justScrobbledIfAny *mediaprovider.Track)
+	onPlayTimeUpdate  []func(float64, float64, bool)
+	onLoopModeChange  []func(LoopMode)
+	onShuffleChange   []func(bool)
+	onVolumeChange    []func(int)
+	onSeek            []func()
+	onPaused          []func()
+	onStopped         []func()
+	onPlaying         []func()
+	onQueueChange     []func()
 
 	onRadioMetadataChange []func(radioName, title, artist string)
 }
@@ -337,6 +345,9 @@ func (p *playbackEngine) loadTrackPaused(idx int, startTime float64) error {
 	// Pre-generate the waveform image for the paused track using the same hook
 	// that normally pre-generates waveforms for the upcoming track.
 	for _, cb := range p.onBeforeSongChange {
+		cb(nowPlaying)
+	}
+	for _, cb := range p.onLoadTrackPaused {
 		cb(nowPlaying)
 	}
 
@@ -867,7 +878,7 @@ func (p *playbackEngine) cacheNextTracks() {
 		// the "currently" playing track, since we're probably about to play it
 		npI := max(p.nowPlayingIdx, 0)
 		for _, idx := range [3]int{npI, npI + 1, npI + 2} {
-			if idx > 0 && idx < p.getPlayQueueLength() {
+			if idx >= 0 && idx < p.getPlayQueueLength() {
 				item := p.getPlayQueueItemAt(idx)
 				if item.Metadata().Type == mediaprovider.MediaItemTypeTrack {
 					fetch = append(fetch, AudioCacheRequest{

@@ -12,16 +12,16 @@ import (
 
 	"github.com/boxes-ltd/imaging"
 	"github.com/cenkalti/dominantcolor"
-	"github.com/dweymouth/supersonic/backend"
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
-	"github.com/dweymouth/supersonic/backend/player"
-	"github.com/dweymouth/supersonic/backend/player/mpv"
-	"github.com/dweymouth/supersonic/sharedutil"
-	"github.com/dweymouth/supersonic/ui/controller"
-	"github.com/dweymouth/supersonic/ui/layouts"
-	myTheme "github.com/dweymouth/supersonic/ui/theme"
-	"github.com/dweymouth/supersonic/ui/util"
-	"github.com/dweymouth/supersonic/ui/widgets"
+	"github.com/supersonic-app/supersonic/backend"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/player"
+	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/sharedutil"
+	"github.com/supersonic-app/supersonic/ui/controller"
+	"github.com/supersonic-app/supersonic/ui/layouts"
+	myTheme "github.com/supersonic-app/supersonic/ui/theme"
+	"github.com/supersonic-app/supersonic/ui/util"
+	"github.com/supersonic-app/supersonic/ui/widgets"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -330,6 +330,25 @@ func (a *NowPlayingPage) onImageLoaded(img image.Image, err error) {
 
 	fyne.Do(func() { a.card.SetCoverImage(img) })
 	if img == nil {
+		if a.conf.UseBackgroundImage {
+			fyne.Do(func() {
+				if !a.backgroundImgA.Hidden {
+					a.backgroundImgA.Hide()
+				}
+				if !a.backgroundImgB.Hidden {
+					a.backgroundImgB.Hide()
+				}
+			})
+		} else {
+			if a.backgroundGradient.StartColor != color.Transparent {
+				anim := canvas.NewColorRGBAAnimation(
+					a.backgroundGradient.StartColor, color.Transparent, myTheme.AnimationDurationMedium, func(c color.Color) {
+						a.backgroundGradient.StartColor = c
+						a.backgroundGradient.Refresh()
+					})
+				anim.Start()
+			}
+		}
 		return
 	}
 
