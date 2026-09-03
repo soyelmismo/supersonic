@@ -13,11 +13,11 @@ import (
 	"fyne.io/fyne/v2/theme"
 
 	"fyne.io/fyne/v2/widget"
-	"github.com/dweymouth/supersonic/backend/mediaprovider"
+	"github.com/supersonic-app/supersonic/backend/mediaprovider"
 
-	myTheme "github.com/dweymouth/supersonic/ui/theme"
-	"github.com/dweymouth/supersonic/ui/util"
-	"github.com/dweymouth/supersonic/ui/widgets"
+	myTheme "github.com/supersonic-app/supersonic/ui/theme"
+	"github.com/supersonic-app/supersonic/ui/util"
+	"github.com/supersonic-app/supersonic/ui/widgets"
 )
 
 // SearchDialog is a base widget to be built upon for creating custom search dialogs
@@ -35,10 +35,12 @@ type SearchDialog struct {
 	OnShowContextMenu func(itemIdx int, pos fyne.Position)
 	OnSearched        func(string) []*mediaprovider.SearchResult
 
-	imgSource     util.ImageFetcher
-	resultsMutex  sync.RWMutex
-	searchResults []*mediaprovider.SearchResult
-	selectedIndex int
+	imgSource                util.ImageFetcher
+	resultsMutex             sync.RWMutex
+	resultsGeneration        int
+	pendingResultsGeneration int
+	searchResults            []*mediaprovider.SearchResult
+	selectedIndex            int
 
 	searchEntry *searchEntry
 	loadingDots *widgets.LoadingDots
@@ -164,6 +166,8 @@ func (sd *SearchDialog) setResults(results []*mediaprovider.SearchResult) {
 func (sd *SearchDialog) onSearched(query string) {
 	sd.loadingDots.Start()
 	var results []*mediaprovider.SearchResult
+	sd.pendingResultsGeneration += 1
+	var generation = sd.pendingResultsGeneration
 	go func() {
 		res := sd.OnSearched(query)
 		if len(res) == 0 {
@@ -171,10 +175,15 @@ func (sd *SearchDialog) onSearched(query string) {
 		} else {
 			results = res
 		}
-		fyne.Do(func() {
-			sd.loadingDots.Stop()
-			sd.setResults(results)
-		})
+		if sd.resultsGeneration < generation {
+			fyne.Do(func() {
+				if sd.pendingResultsGeneration == generation {
+					sd.loadingDots.Stop()
+				}
+				sd.setResults(results)
+			})
+			sd.resultsGeneration = generation
+		}
 	}()
 }
 

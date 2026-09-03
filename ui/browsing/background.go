@@ -9,7 +9,7 @@ import (
 
 	"github.com/boxes-ltd/imaging"
 	"github.com/cenkalti/dominantcolor"
-	myTheme "github.com/dweymouth/supersonic/ui/theme"
+	myTheme "github.com/supersonic-app/supersonic/ui/theme"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
